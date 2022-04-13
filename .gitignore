@@ -1,3 +1,6 @@
+# Maven output folder
+target
+
 # Compiled class file
 *.class
 
