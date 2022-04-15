@@ -163,7 +163,8 @@ public class App {
                     pd, ph, pw, od, oh, ow
             }));
 
-            for(int i = 0; i<channels*od; i++){
+            int im_processors = volume.getNFrames()*od*channels;
+            for(int i = 0; i<im_processors; i++){
                 pixels.add(new float[oh*ow]);
             }
         }
@@ -187,21 +188,49 @@ public class App {
 
         public void writeTile(float[] data, int tile, int batch_offset) {
             int[] origin = scaledOrigin(tiles.get(tile));
-            int t = 0;
             int frame_offset = frame * oc * od;
+
+            //full patch is written to the output.
+            int dlow = 0;
+            int dhigh = pd;
+            int ylow =0;
+            int yhigh = ph;
+            int xlow = 0;
+            int xhigh = pw;
+
+            if(origin[0] != 0){
+                dlow = pd/4;
+            }
+            /*
+            if( origin[0] + pd != od){
+                dhigh = 3*pd/4;
+            }
+            if(origin[1] != 0){
+                ylow = ph/4;
+            }
+            if(origin[1] + ph != oh){
+                yhigh = 3*ph/4;
+            }
+            */
+            if(origin[2] > 0){
+                xlow = pw/4;
+            }
+            if(origin[2] + pw < ow){
+                xhigh = 3*pw/4;
+            }
+
             for (int i = 0; i < oc; i++) {
                 int depth_offset = i + origin[0] * oc;
-                for (int j = 0; j < pd; j++) {
+                for (int j = dlow; j < dhigh; j++) {
                     int nz = depth_offset + oc * j + frame_offset;
                     float[] p = pixels.get(nz);
-
-                    for (int k = 0; k < ph; k++) {
-                        for (int m = 0; m < pw; m++) {
+                    for (int k = ylow; k < yhigh; k++) {
+                        for (int m = xlow; m < xhigh; m++) {
                             int x = m + origin[2];
                             int y = k + origin[1];
+                            int t = m + k*pw + j * ( pw * ph) + i*pw*ph*pd;
                             float f = data[t + batch_offset];
                             p[x + y*ow] = f;
-                            t++;
                         }
                     }
                 }
@@ -216,18 +245,16 @@ public class App {
                 ImageProcessor p = new FloatProcessor(ow, oh, pxs);
                 stack.addSlice(p);
             }
-            dest.setStack(stack, oc, od, 1);
+            dest.setStack(stack, oc, od, volume.getNFrames());
             return dest;
         }
     }
 
     public void getTile(float[] data, int tile, int batch_offset){
-        System.out.println("tile: " + tile + " // " + batch_offset);
         int frame_offset = volume.getNChannels()*volume.getNSlices()*frame;
 
         int[] origin = tiles.get(tile);
         ImageStack stack = volume.getStack();
-        System.out.println(Arrays.toString(origin));
         int t = 0;
         for(int i = 0; i<c; i++){
             int channel_offset = i + origin[0]*c;
@@ -262,6 +289,7 @@ public class App {
     public OutputChannel getOutputChannel(Tensor t){
         return new OutputChannel(t);
     }
+
     public static void main( String[] args ){
         SavedModelBundle bundle = SavedModelBundle.load("first");
         new ImageJ();
@@ -274,29 +302,33 @@ public class App {
             app.setData(plus);
 
             try(Tensor input = TFloat32.tensorOf(Shape.of(app.batch_size, app.c, app.d, app.h, app.w));){
-                OutputChannel original = app.getOutputChannel(input);
 
+                OutputChannel original = app.getOutputChannel(input);
                 Map<String, Tensor> inputs = new HashMap<>();
                 inputs.put(app.name, input);
                 Map<String, OutputChannel> results = new HashMap<>();
-                for(int i = 0; i<app.nBatches; i++){
-                    System.out.println("tic");
-                    float[] batch = app.getBatch(i);
-                    FloatDataBuffer ibf = input.asRawTensor().data().asFloats().offset(0);
-                    ibf.write(batch);
-                    Map<String, Tensor> out = fun.call(inputs);
-                    original.writeBatch(batch, i);
-                    for(String key: out.keySet()){
-                        final Tensor outTensor = out.get(key);
-                        App.OutputChannel channel = results.computeIfAbsent(key, k->app.getOutputChannel(outTensor));
 
-                        float[] batch_buffer = new float[(int)outTensor.size()];
-                        FloatDataBuffer dbf = outTensor.asRawTensor().data().asFloats();
-                        dbf.read(batch_buffer);
-                        channel.writeBatch(batch_buffer, i);
-                        outTensor.close();
+                for(int frame = 0; frame<plus.getNFrames(); frame++){
+                    app.frame = frame;
+                    for(int i = 0; i<app.nBatches; i++){
+                        float[] batch = app.getBatch(i);
+                        FloatDataBuffer ibf = input.asRawTensor().data().asFloats().offset(0);
+                        ibf.write(batch);
+                        Map<String, Tensor> out = fun.call(inputs);
+                        original.writeBatch(batch, i);
+                        for(String key: out.keySet()){
+                            final Tensor outTensor = out.get(key);
+                            App.OutputChannel channel = results.computeIfAbsent(key, k->app.getOutputChannel(outTensor));
+
+                            float[] batch_buffer = new float[(int)outTensor.size()];
+                            FloatDataBuffer dbf = outTensor.asRawTensor().data().asFloats();
+                            dbf.read(batch_buffer);
+                            channel.writeBatch(batch_buffer, i);
+                            outTensor.close();
+                        }
                     }
                 }
+
                 ImagePlus o = original.createImage(plus);
                 o.setTitle("input");
                 o.show();
