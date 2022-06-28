@@ -22,10 +22,6 @@ import java.util.List;
 import java.util.Map;
 
 
-/**
- * Hello world!
- *
- */
 public class App {
 
     static SavedModelBundle bundle;
@@ -198,20 +194,18 @@ public class App {
             int xlow = 0;
             int xhigh = pw;
 
-            if(origin[0] != 0){
+            if(origin[0] > 0){
                 dlow = pd/4;
             }
-            /*
-            if( origin[0] + pd != od){
+            if( origin[0] + pd < od){
                 dhigh = 3*pd/4;
             }
-            if(origin[1] != 0){
+            if(origin[1] > 0){
                 ylow = ph/4;
             }
-            if(origin[1] + ph != oh){
+            if(origin[1] + ph < oh){
                 yhigh = 3*ph/4;
             }
-            */
             if(origin[2] > 0){
                 xlow = pw/4;
             }
@@ -291,6 +285,7 @@ public class App {
     }
 
     public static void main( String[] args ){
+        long start = System.currentTimeMillis();
         SavedModelBundle bundle = SavedModelBundle.load("first");
         new ImageJ();
         ImagePlus plus = new ImagePlus("./sample.tif");
@@ -339,5 +334,7 @@ public class App {
                 }
             }
         }
+        long end = System.currentTimeMillis();
+        System.out.println( ( (end - start)/1000.0 ) + " seconds" );
     }
 }
