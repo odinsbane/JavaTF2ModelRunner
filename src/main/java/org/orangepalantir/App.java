@@ -15,6 +15,7 @@ import org.tensorflow.ndarray.buffer.FloatDataBuffer;
 import org.tensorflow.types.TFloat32;
 
 import java.awt.image.DataBufferFloat;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -291,10 +292,12 @@ public class App {
     }
 
     public static void main( String[] args ){
-        SavedModelBundle bundle = SavedModelBundle.load("first");
+
+        SavedModelBundle bundle = SavedModelBundle.load(args[0]);
         new ImageJ();
-        ImagePlus plus = new ImagePlus("./sample.tif");
+        ImagePlus plus = new ImagePlus(Paths.get(args[1]).toAbsolutePath().toString());
         try( Session s = bundle.session();){
+
             s.initialize();
             SessionFunction fun = bundle.function("serving_default");
             Signature sig = fun.signature();
