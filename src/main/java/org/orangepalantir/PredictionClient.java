@@ -59,7 +59,7 @@ public class PredictionClient {
         String img = Paths.get(args[0]).toAbsolutePath().toString();
 
         ImagePlus plus = new ImagePlus(img);
-        Socket s = new Socket("localhost", 5050);
+        Socket s = new Socket(args[1], 5050);
 
         PredictionClient client = new PredictionClient(s);
         client.process(plus);
