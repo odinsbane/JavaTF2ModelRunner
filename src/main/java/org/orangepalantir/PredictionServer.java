@@ -15,7 +15,13 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * A simple socket server for creating predictions with a neural network.
@@ -41,43 +47,88 @@ public class PredictionServer implements AutoCloseable{
         try (ServerSocket socket = new ServerSocket(5050);
              Socket client = socket.accept();
         ) {
+
+
             InputStream is = client.getInputStream();
             DataInputStream stream = new DataInputStream(is);
-            int channels = stream.readInt();
-            int width = stream.readInt();
-            int height = stream.readInt();
-            int slices = stream.readInt();
-            byte[] bytes = new byte[4 * channels * width * height * slices];
-            int read = 0;
-            while (read < bytes.length) {
-                int r = is.read(bytes, read, bytes.length - read);
-                if (r < 0) break;
-                read += r;
+            FloatPredictor predictor = new FloatPredictor(sig);
+            OutputStream os = client.getOutputStream();
+
+            int frames = stream.readInt();
+
+            System.out.println("Processing image with " + frames + " frames");
+
+            List<Future<Callable<List<FloatPredictor.OutputMapper>>>> reading = new ArrayList<>();
+            ExecutorService service = Executors.newFixedThreadPool(1);
+            ExecutorService sending = Executors.newFixedThreadPool(1);
+
+            for (int i = 0; i < frames; i++) {
+                Future<Callable<List<FloatPredictor.OutputMapper>>> toRead = service.submit(() -> {
+                    try {
+                        int channels = stream.readInt();
+                        int width = stream.readInt();
+                        int height = stream.readInt();
+                        int slices = stream.readInt();
+                        byte[] bytes = new byte[4 * channels * width * height * slices];
+                        int read = 0;
+                        while (read < bytes.length) {
+                            int r = is.read(bytes, read, bytes.length - read);
+                            if (r < 0) break;
+                            read += r;
+                        }
+                        return () -> {
+                            predictor.setData(bytes, channels, width, height, slices);
+                            return predictor.predict(fun);
+                        };
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+                reading.add(toRead);
             }
 
+
             try {
-                FloatPredictor predictor = new FloatPredictor(sig);
-                predictor.setData(bytes, channels, width, height, slices);
-                List<FloatPredictor.OutputMapper> out = predictor.predict(fun);
-                OutputStream os = client.getOutputStream();
-                DataOutputStream dos = new DataOutputStream(os);
-                System.out.println(out.size());
-                dos.writeInt(out.size());
-                System.out.println("writing outputs.");
-                for (FloatPredictor.OutputMapper op : out) {
-                    System.out.println("  " + op.bdata.length);
-                    dos.writeInt(op.oc);
-                    dos.writeInt(op.ow);
-                    dos.writeInt(op.oh);
-                    dos.writeInt(op.od);
-                    os.write(op.bdata);
+                List<Future<?>> sent = new ArrayList<>();
+
+                for (Future<Callable<List<FloatPredictor.OutputMapper>>> finished : reading) {
+                    List<FloatPredictor.OutputMapper> out = finished.get().call();
+                    Future<?> done = sending.submit(() -> {
+                        try {
+                            DataOutputStream dos = new DataOutputStream(os);
+                            System.out.println(out.size());
+                            dos.writeInt(out.size());
+                            System.out.println("writing outputs.");
+                            for (FloatPredictor.OutputMapper op : out) {
+                                System.out.println("  " + op.bdata.length);
+                                dos.writeInt(op.oc);
+                                dos.writeInt(op.ow);
+                                dos.writeInt(op.oh);
+                                dos.writeInt(op.od);
+                                os.write(op.bdata);
+                            }
+                        } catch (Exception e) {
+                            System.out.println("unable to process");
+                            e.printStackTrace();
+                            broken = true;
+                        }
+                    });
+                    sent.add(done);
                 }
-            } catch (Exception e) {
-                System.out.println("unable to process");
+                for(Future<?> d : sent){
+                    d.get();
+                }
+            } catch (IOException e) {
                 e.printStackTrace();
-                broken = true;
             }
+            System.out.println("finished client");
         } catch (IOException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }

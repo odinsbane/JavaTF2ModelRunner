@@ -186,6 +186,7 @@ public class FloatPredictor {
     }
 
     public void createVolumeTiles(){
+        tiles.clear();
         int strideZ = d/2;
         int strideY = h/2;
         int strideX = w/2;
@@ -237,7 +238,7 @@ public class FloatPredictor {
 
     public void bufferTile(int tile, int batch_offset){
         int[] origin = tiles.get(tile);
-        System.out.println("tile: " + Arrays.toString(origin));
+        System.out.print(".");
         int t = 0;
         for(int i = 0; i<c; i++){
             for(int j = 0; j<d; j++){
