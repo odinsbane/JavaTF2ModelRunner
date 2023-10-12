@@ -1,5 +1,6 @@
 package org.orangepalantir;
 
+import org.tensorflow.Result;
 import org.tensorflow.SessionFunction;
 import org.tensorflow.Signature;
 import org.tensorflow.Tensor;
@@ -40,10 +41,10 @@ public class FloatPredictor {
             Signature.TensorDescription description = descriptions.get(k);
             Shape s = description.shape;
             name = k;
-            c = (int)s.size(1);
-            d = (int)s.size(2);
-            h = (int)s.size(3);
-            w = (int)s.size(4);
+            c = (int)s.size(4);
+            d = (int)s.size(1);
+            h = (int)s.size(2);
+            w = (int)s.size(3);
         }
 
         batchBuffer = new float[c*d*h*w*batch_size];
@@ -58,10 +59,10 @@ public class FloatPredictor {
         public OutputMapper(Tensor t){
             Shape s = t.shape();
             //these are per sample sizes.
-            int channels = (int)s.size(1);
-            int depth = (int)s.size(2);
-            int height = (int)s.size(3);
-            int width = (int)s.size(4);
+            int channels = (int)s.size(4);
+            int depth = (int)s.size(1);
+            int height = (int)s.size(2);
+            int width = (int)s.size(3);
 
 
             prepareGeometry(channels, depth, height, width);
@@ -176,7 +177,7 @@ public class FloatPredictor {
      * @param height
      * @param slices
      */
-    public void setData(byte[] data, int channels, int width, int height, int slices){
+    public void setData(byte[] data, int width, int height, int slices, int channels){
         vc = channels;
         vh = height;
         vw = width;
@@ -282,16 +283,17 @@ public class FloatPredictor {
      */
     List<OutputMapper> predict(SessionFunction fun){
         Map<String, OutputMapper> results = new HashMap<>();
-        try(Tensor input = TFloat32.tensorOf(Shape.of(batch_size, c, d, h, w));){
+        try(Tensor input = TFloat32.tensorOf(Shape.of(batch_size, d, h, w, c));){
             Map<String, Tensor> inputs = new HashMap<>();
             inputs.put(name, input);
             for(int i = 0; i<nBatches; i++){
                 float[] batch = getBatch(i);
                 FloatDataBuffer ibf = input.asRawTensor().data().asFloats().offset(0);
                 ibf.write(batch);
-                Map<String, Tensor> out = fun.call(inputs);
-                for(String key: out.keySet()){
-                    final Tensor outTensor = out.get(key);
+                Result out = fun.call(inputs);
+                for(Map.Entry<String, Tensor> entry: out){
+                    String key = entry.getKey();
+                    final Tensor outTensor = entry.getValue();
                     OutputMapper channel = results.computeIfAbsent(key, k->{
                         OutputMapper mapper = getOutputMapper(outTensor);
                         mapper.setName(k);

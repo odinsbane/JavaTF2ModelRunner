@@ -76,8 +76,9 @@ public class PredictionServer implements AutoCloseable{
                             if (r < 0) break;
                             read += r;
                         }
+                        System.out.println("reading " + channels + ", " + width + ", " + height + ", " + slices);
                         return () -> {
-                            predictor.setData(bytes, channels, width, height, slices);
+                            predictor.setData(bytes, width, height, slices, channels);
                             return predictor.predict(fun);
                         };
                     } catch (Exception e) {

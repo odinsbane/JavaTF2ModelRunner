@@ -5,11 +5,7 @@ import ij.ImagePlus;
 import ij.ImageStack;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
-import org.tensorflow.SavedModelBundle;
-import org.tensorflow.Session;
-import org.tensorflow.SessionFunction;
-import org.tensorflow.Signature;
-import org.tensorflow.Tensor;
+import org.tensorflow.*;
 import org.tensorflow.ndarray.Shape;
 import org.tensorflow.ndarray.buffer.FloatDataBuffer;
 import org.tensorflow.types.TFloat32;
@@ -311,10 +307,12 @@ public class App {
                         float[] batch = app.getBatch(i);
                         FloatDataBuffer ibf = input.asRawTensor().data().asFloats().offset(0);
                         ibf.write(batch);
-                        Map<String, Tensor> out = fun.call(inputs);
+                        Result out = fun.call(inputs);
                         original.writeBatch(batch, i);
-                        for(String key: out.keySet()){
-                            final Tensor outTensor = out.get(key);
+                        for(Map.Entry<String, Tensor> entry: out){
+                            String key = entry.getKey();
+
+                            final Tensor outTensor = entry.getValue();
                             App.OutputChannel channel = results.computeIfAbsent(key, k->app.getOutputChannel(outTensor));
 
                             float[] batch_buffer = new float[(int)outTensor.size()];
