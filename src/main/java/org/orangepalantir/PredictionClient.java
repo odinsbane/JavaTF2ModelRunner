@@ -3,6 +3,8 @@ package org.orangepalantir;
 import ij.ImageJ;
 import ij.ImagePlus;
 import ij.ImageStack;
+import ij.process.ShortProcessor;
+import ij.process.FloatProcessor;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -26,6 +28,89 @@ public class PredictionClient {
 
     public PredictionClient(Socket s){
         server = s;
+    }
+
+    static public ImagePlus normalize(ImagePlus plus){
+        long[] histogram = null;
+        for(int s = 1; s <= plus.getNSlices(); s++){
+
+                ShortProcessor p = (ShortProcessor)plus.getStack().getProcessor(s);
+
+                int[] h2 = p.getHistogram();
+
+                if(histogram == null){
+                    histogram  = new long[h2.length];
+                }
+                for(int i = 0; i < histogram.length; i++){
+                    histogram[i] += h2[i];
+                }
+
+            }
+
+            double[] x = new double[histogram.length];
+            int least = -1;
+            int most = -1;
+
+            for(int i = 0; i<histogram.length; i++){
+                if(histogram[i] != 0){
+                    least = i;
+                    break;
+                }
+            }
+
+            for(int i = histogram.length-1; i>=0; i--){
+                if(histogram[i] != 0){
+                    most = i;
+                    break;
+                }
+            }
+
+            double last = 0;
+
+            for(int i = 0; i<x.length; i++){
+                x[i] = last + histogram[i];
+                last = x[i];
+            }
+            double cutoff = 0.001;
+            boolean found = false;
+            boolean lower = false;
+            int low = -1;
+            int high = -1;
+            for(int i = 0; i<x.length; i++){
+                x[i] = x[i]/last;
+                if(!lower && x[i] > cutoff){
+                    lower = true;
+                    low = i;
+                }
+
+                if(!found && x[i] >= 1 - cutoff){
+                    found = true;
+                    high = i;
+                }
+            }
+
+            ImageStack stack = new ImageStack(plus.getWidth(), plus.getHeight());
+
+            for(int s = 1; s <= plus.getNSlices(); s++){
+
+                ShortProcessor p = (ShortProcessor)plus.getStack().getProcessor(s);
+                FloatProcessor fp = p.convertToFloatProcessor();
+                float[] pixels = (float[])fp.getPixels();
+                double factor = 1.0/(high - low);
+                for(int i = 0; i< pixels.length; i++){
+                    double px = (pixels[i] - low)*factor;
+                    px = px < 0 ? 0: px;
+                    px = px > 1 ? 1: px;
+                    pixels[i] = (float)px;
+                }
+
+                stack.addSlice(fp);
+
+
+            }
+
+            return new ImagePlus("normalized", stack);
+
     }
 
     public void process(ImagePlus plus) throws IOException, ExecutionException, InterruptedException {
