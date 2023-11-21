@@ -6,6 +6,7 @@ import org.tensorflow.Tensor;
 import org.tensorflow.ndarray.Shape;
 import org.tensorflow.ndarray.buffer.FloatDataBuffer;
 import org.tensorflow.types.TFloat32;
+import org.tensorflow.Result;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
@@ -289,9 +290,9 @@ public class FloatPredictor {
                 float[] batch = getBatch(i);
                 FloatDataBuffer ibf = input.asRawTensor().data().asFloats().offset(0);
                 ibf.write(batch);
-                Map<String, Tensor> out = fun.call(inputs);
+                Result out = fun.call(inputs);
                 for(String key: out.keySet()){
-                    final Tensor outTensor = out.get(key);
+                    final Tensor outTensor = out.get(key).get();
                     OutputMapper channel = results.computeIfAbsent(key, k->{
                         OutputMapper mapper = getOutputMapper(outTensor);
                         mapper.setName(k);
