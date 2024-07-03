@@ -17,11 +17,7 @@ import java.nio.FloatBuffer;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 
 /**
  * A simple socket server for creating predictions with a neural network.
@@ -44,6 +40,10 @@ public class PredictionServer implements AutoCloseable{
     }
 
     public void run() {
+        ExecutorService receiver = Executors.newFixedThreadPool(1);
+        ExecutorService predicts = Executors.newFixedThreadPool(1);
+        ExecutorService sender = Executors.newFixedThreadPool(1);
+
         try (ServerSocket socket = new ServerSocket(5050);
              Socket client = socket.accept();
         ) {
@@ -59,12 +59,13 @@ public class PredictionServer implements AutoCloseable{
             System.out.println("Processing image with " + frames + " frames");
 
             List<Future<Callable<List<FloatPredictor.OutputMapper>>>> reading = new ArrayList<>();
-            ExecutorService service = Executors.newFixedThreadPool(1);
-            ExecutorService sending = Executors.newFixedThreadPool(1);
 
-            for (int i = 0; i < frames; i++) {
-                Future<Callable<List<FloatPredictor.OutputMapper>>> toRead = service.submit(() -> {
-                    try {
+            BlockingQueue<Callable<List<FloatPredictor.OutputMapper>>> toPredict = new ArrayBlockingQueue<>(1);
+            BlockingQueue<List<FloatPredictor.OutputMapper>> toSend = new ArrayBlockingQueue(1);
+
+            Future<?> receiving = receiver.submit(() -> {
+                try {
+                    for (int i = 0; i < frames; i++) {
                         int channels = stream.readInt();
                         int width = stream.readInt();
                         int height = stream.readInt();
@@ -76,60 +77,72 @@ public class PredictionServer implements AutoCloseable{
                             if (r < 0) break;
                             read += r;
                         }
-                        return () -> {
+                        toPredict.put(() -> {
                             predictor.setData(bytes, channels, width, height, slices);
                             return predictor.predict(fun);
-                        };
+                        });
+                        System.out.println("read frame: " + i);
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            Future<?> predicting = predicts.submit(() -> {
+                for (int i = 0; i < frames; i++) {
+                    try {
+                        Callable<List<FloatPredictor.OutputMapper>> result = toPredict.take();
+                        toSend.add(result.call());
+                        System.out.println("predicted frame: " + i);
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
-                });
-                reading.add(toRead);
-            }
+                }
+            });
 
 
-            try {
-                List<Future<?>> sent = new ArrayList<>();
-
-                for (Future<Callable<List<FloatPredictor.OutputMapper>>> finished : reading) {
-                    List<FloatPredictor.OutputMapper> out = finished.get().call();
-                    Future<?> done = sending.submit(() -> {
-                        try {
-                            DataOutputStream dos = new DataOutputStream(os);
-                            System.out.println(out.size());
-                            dos.writeInt(out.size());
-                            System.out.println("writing outputs.");
-                            for (FloatPredictor.OutputMapper op : out) {
-                                System.out.println("  " + op.bdata.length);
-                                dos.writeInt(op.oc);
-                                dos.writeInt(op.ow);
-                                dos.writeInt(op.oh);
-                                dos.writeInt(op.od);
-                                os.write(op.bdata);
-                            }
-                        } catch (Exception e) {
-                            System.out.println("unable to process");
-                            e.printStackTrace();
-                            broken = true;
+            Future<?> sending = sender.submit(() -> {
+                try {
+                    DataOutputStream dos = new DataOutputStream(os);
+                    for (int i = 0; i < frames; i++) {
+                        List<FloatPredictor.OutputMapper> result = toSend.take();
+                        System.out.println(result.size());
+                        dos.writeInt(result.size());
+                        for (FloatPredictor.OutputMapper op : result) {
+                            System.out.println("  " + op.bdata.length);
+                            dos.writeInt(op.oc);
+                            dos.writeInt(op.ow);
+                            dos.writeInt(op.oh);
+                            dos.writeInt(op.od);
+                            os.write(op.bdata);
                         }
-                    });
-                    sent.add(done);
+                        System.out.println("written frame: " + i);
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
                 }
-                for(Future<?> d : sent){
-                    d.get();
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
+            });
+            try{
+                receiving.get();
+            } catch(Exception e){
+                predicting.cancel(true);
+                sending.cancel(true);
             }
-            System.out.println("finished client");
+            try{
+                predicting.get();
+            } catch(Exception e){
+                sending.cancel(true);
+            }
+            sending.get();
         } catch (IOException e) {
-            e.printStackTrace();
+            throw new RuntimeException(e);
         } catch (ExecutionException e) {
-            e.printStackTrace();
+            throw new RuntimeException(e);
         } catch (InterruptedException e) {
-            e.printStackTrace();
-        } catch (Exception e) {
-            e.printStackTrace();
+            throw new RuntimeException(e);
+        } finally{
+            receiver.shutdown();
+            sender.shutdown();
+            predicts.shutdown();
         }
     }
 
