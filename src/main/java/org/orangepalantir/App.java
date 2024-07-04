@@ -1,8 +1,13 @@
 package org.orangepalantir;
 
+import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
 import ij.ImageStack;
+import ij.measure.Calibration;
+import ij.plugin.FileInfoVirtualStack;
+import ij.plugin.FolderOpener;
+import ij.plugin.Resizer;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import org.tensorflow.SavedModelBundle;
@@ -16,12 +21,16 @@ import org.tensorflow.types.TFloat32;
 import org.tensorflow.Result;
 
 import java.awt.image.DataBufferFloat;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 
 public class App {
@@ -70,6 +79,7 @@ public class App {
         vw = volume.getWidth();
         vd = volume.getNSlices();
         this.volume = volume;
+        tiles.clear();
         createVolumeTiles();
     }
 
@@ -285,29 +295,85 @@ public class App {
     public OutputChannel getOutputChannel(Tensor t){
         return new OutputChannel(t);
     }
+    static ImagePlus getIsoTropicFrame(ImagePlus original, int frame){
 
+        int slices = original.getNSlices();
+        int channels = original.getNChannels();
+        int py = original.getHeight();
+        int px = original.getWidth();
+        ImageStack stack = new ImageStack(px, py);
+
+
+        for(int i = 0;i<slices; i++){
+            for(int j = 0; j<channels; j++) {
+                int n = i * channels + frame * channels * slices + j + 1;
+                ImageProcessor proc = original.getStack().getProcessor(n).duplicate();
+                stack.addSlice(proc);
+            }
+        }
+        ImagePlus plus = original.createImagePlus();
+        plus.setTitle(original.getTitle() + "-t" + frame);
+        plus.setStack(stack, channels, slices, 1);
+        Calibration c = plus.getCalibration();
+        double scale = c.pixelDepth/c.pixelWidth;
+        int newZ = (int)(scale * plus.getNSlices());
+        if(newZ == plus.getNSlices()){
+            return plus;
+        }
+        Resizer resizer = new Resizer();
+        ImagePlus iso = resizer.zScale(plus, newZ, ImageProcessor.BILINEAR);
+        Calibration c2 = iso.getCalibration();
+        c2.zOrigin = c.zOrigin * iso.getNSlices()/plus.getNSlices();
+        iso.setTitle(plus.getTitle() + "-iso");
+        return iso;
+
+    }
     public static void main( String[] args ){
         long start = System.currentTimeMillis();
+        Path images = Paths.get(args[1]).toAbsolutePath();
+        ImagePlus plus;
+        String baseName;
+        if(Files.isDirectory(images)){
+            String filter = ".tif";
+            baseName = images.getFileName().toString() + ".tif";
+            try {
+                List<Path> listed = Files.list(images).filter(
+                        p->{
+                            return p.toString().contains(filter);
+                        }
+                    ).collect(Collectors.toList());
+                int frames = listed.size();
+                ImagePlus canon = FileInfoVirtualStack.openVirtual(listed.get(0).toString());
+                Calibration cal = canon.getCalibration();
+                plus = FolderOpener.open(images.toString(), "virtual filter=" + filter);
+                plus.setCalibration(cal);
+                plus.setDimensions(canon.getNChannels(), canon.getNSlices(), frames);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }else{
+            plus = new ImagePlus(images.toString());
+            baseName = images.getFileName().toString();
+        }
+
         SavedModelBundle bundle = SavedModelBundle.load(args[0]);
-        new ImageJ();
-        ImagePlus plus = new ImagePlus(Paths.get(args[1]).toAbsolutePath().toString());
         try( Session s = bundle.session();){
 
             s.initialize();
             SessionFunction fun = bundle.function("serving_default");
             Signature sig = fun.signature();
+
+
             App app = new App(4, sig);
-            app.setData(plus);
-
             try(Tensor input = TFloat32.tensorOf(Shape.of(app.batch_size, app.c, app.d, app.h, app.w));){
-
-                OutputChannel original = app.getOutputChannel(input);
-                Map<String, Tensor> inputs = new HashMap<>();
-                inputs.put(app.name, input);
-                Map<String, OutputChannel> results = new HashMap<>();
-
                 for(int frame = 0; frame<plus.getNFrames(); frame++){
-                    app.frame = frame;
+                    ImagePlus iso = getIsoTropicFrame(plus, frame);
+                    app.setData(iso);
+                    OutputChannel original = app.getOutputChannel(input);
+                    Map<String, Tensor> inputs = new HashMap<>();
+                    inputs.put(app.name, input);
+                    Map<String, OutputChannel> results = new HashMap<>();
+
                     for(int i = 0; i<app.nBatches; i++){
                         float[] batch = app.getBatch(i);
                         FloatDataBuffer ibf = input.asRawTensor().data().asFloats().offset(0);
@@ -325,16 +391,14 @@ public class App {
                             outTensor.close();
                         }
                     }
+
+                    for(String key: results.keySet()){
+                        ImagePlus opp = results.get(key).createImage(iso);
+                        IJ.save(opp,key + "-" + "t" + frame + "-" + baseName);
+                    }
+
                 }
 
-                ImagePlus o = original.createImage(plus);
-                o.setTitle("input");
-                o.show();
-                for(String key: results.keySet()){
-                    ImagePlus opp = results.get(key).createImage(plus);
-                    opp.setTitle(key);
-                    opp.show();
-                }
             }
         }
         long end = System.currentTimeMillis();
