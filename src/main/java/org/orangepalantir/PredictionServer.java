@@ -133,13 +133,9 @@ public class PredictionServer implements AutoCloseable{
                 sending.cancel(true);
             }
             sending.get();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } finally{
+        } catch (Exception e) {
+            e.printStackTrace();
+        }  finally{
             receiver.shutdown();
             sender.shutdown();
             predicts.shutdown();

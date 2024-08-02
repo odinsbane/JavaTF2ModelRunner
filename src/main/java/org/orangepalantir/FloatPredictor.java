@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 public class FloatPredictor {
-    int batch_size = 1;
+    int batch_size = 4;
     int nBatches;
     int w;
     int h;
@@ -150,6 +150,39 @@ public class FloatPredictor {
                 xhigh = 3*pw/4;
             }
 
+            float[] factors = new float[oc];
+            float[] means = new float[oc];
+            //Batch Normalize
+            for (int i = 0; i < oc; i++) {
+                int depth_offset = i + origin[0] * oc;
+                float mn = 0;
+                float m2 = 0;
+                int count = 0;
+
+                for (int j = dlow; j < dhigh; j++) {
+                    int nz = depth_offset + oc * j;
+                    //float[] p = pixels.get(nz);
+                    int proc_offset = ow*oh * nz;
+                    for (int k = ylow; k < yhigh; k++) {
+                        for (int m = xlow; m < xhigh; m++) {
+                            int x = m + origin[2];
+                            int y = k + origin[1];
+                            int t = m + k*pw + j * ( pw * ph) + i*pw*ph*pd;
+                            float f = data[t + batch_offset];
+                            mn += f;
+                            m2 += f*f;
+                            count ++;
+                        }
+                    }
+                }
+
+                mn = mn/count;
+                float std = (float)Math.sqrt(m2/count - mn*mn);
+                means[i] = mn;
+                factors[i] = std > 1.0e-3 ? std : 1;
+
+            }
+
             for (int i = 0; i < oc; i++) {
                 int depth_offset = i + origin[0] * oc;
                 for (int j = dlow; j < dhigh; j++) {
@@ -161,8 +194,9 @@ public class FloatPredictor {
                             int x = m + origin[2];
                             int y = k + origin[1];
                             int t = m + k*pw + j * ( pw * ph) + i*pw*ph*pd;
-                            pixels.put(proc_offset + y*ow + x, data[t + batch_offset]);
+                            pixels.put(proc_offset + y*ow + x, (data[t + batch_offset] - means[i])*factors[i]);
                             //pixels[proc_offset + y*ow + x] = data[t + batch_offset];
+
                         }
                     }
                 }
