@@ -53,9 +53,9 @@ public class FloatRunner {
         if(dup.getNSlices() != original.getNSlices() || dup.getHeight() != original.getHeight() || dup.getWidth() != original.getWidth()){
             Calibration c0 = original.getCalibration();
             Calibration c1 = dup.getCalibration();
-            c1.pixelDepth = c0.pixelDepth*dup.getNSlices() / original.getNSlices();
-            c1.pixelWidth = c0.pixelWidth*dup.getWidth() / original.getWidth();
-            c1.pixelHeight = c0.pixelHeight*dup.getHeight() / original.getHeight();
+            c1.pixelDepth = c0.pixelDepth*original.getNSlices() / dup.getNSlices();
+            c1.pixelWidth = c0.pixelWidth*original.getWidth() / dup.getWidth();
+            c1.pixelHeight = c0.pixelHeight*original.getHeight() / dup.getHeight();
             dup.setCalibration(c1);
         }
 

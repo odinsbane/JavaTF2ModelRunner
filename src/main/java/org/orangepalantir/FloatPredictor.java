@@ -59,10 +59,10 @@ public class FloatPredictor {
         public OutputMapper(Tensor t){
             Shape s = t.shape();
             //these are per sample sizes.
-            int channels = (int)s.size(1);
-            int depth = (int)s.size(2);
-            int height = (int)s.size(3);
-            int width = (int)s.size(4);
+            int channels = (int)s.get(1);
+            int depth = (int)s.get(2);
+            int height = (int)s.get(3);
+            int width = (int)s.get(4);
 
 
             prepareGeometry(channels, depth, height, width);
@@ -94,10 +94,6 @@ public class FloatPredictor {
             od = vd*pd/d;
             oh = vh*ph/h;
             ow = vw*pw/w;
-
-            System.out.println(Arrays.toString(new int[]{
-                   c,  pd, ph, pw, oc, od, oh, ow
-            }));
 
             bdata = new byte[4 * od * oc * ow * oh];
             pixels = ByteBuffer.wrap(bdata).asFloatBuffer();
@@ -150,39 +146,6 @@ public class FloatPredictor {
                 xhigh = 3*pw/4;
             }
 
-            float[] factors = new float[oc];
-            float[] means = new float[oc];
-            //Batch Normalize
-            for (int i = 0; i < oc; i++) {
-                int depth_offset = i + origin[0] * oc;
-                float mn = 0;
-                float m2 = 0;
-                int count = 0;
-
-                for (int j = dlow; j < dhigh; j++) {
-                    int nz = depth_offset + oc * j;
-                    //float[] p = pixels.get(nz);
-                    int proc_offset = ow*oh * nz;
-                    for (int k = ylow; k < yhigh; k++) {
-                        for (int m = xlow; m < xhigh; m++) {
-                            int x = m + origin[2];
-                            int y = k + origin[1];
-                            int t = m + k*pw + j * ( pw * ph) + i*pw*ph*pd;
-                            float f = data[t + batch_offset];
-                            mn += f;
-                            m2 += f*f;
-                            count ++;
-                        }
-                    }
-                }
-
-                mn = mn/count;
-                float std = (float)Math.sqrt(m2/count - mn*mn);
-                means[i] = mn;
-                factors[i] = std > 1.0e-3 ? std : 1;
-
-            }
-
             for (int i = 0; i < oc; i++) {
                 int depth_offset = i + origin[0] * oc;
                 for (int j = dlow; j < dhigh; j++) {
@@ -194,9 +157,7 @@ public class FloatPredictor {
                             int x = m + origin[2];
                             int y = k + origin[1];
                             int t = m + k*pw + j * ( pw * ph) + i*pw*ph*pd;
-                            pixels.put(proc_offset + y*ow + x, (data[t + batch_offset] - means[i])*factors[i]);
-                            //pixels[proc_offset + y*ow + x] = data[t + batch_offset];
-
+                            pixels.put(proc_offset + y*ow + x, data[t + batch_offset] );
                         }
                     }
                 }
@@ -204,7 +165,8 @@ public class FloatPredictor {
         }
     }
     /**
-     * The data is an array of byte's representing an array of floats eg. 8 bytes per
+     * The data is an array of byte's representing an array of floats eg. 4 bytes per
+     * pixel.
      * @param data
      * @param channels
      * @param width
@@ -246,7 +208,6 @@ public class FloatPredictor {
                     if( z0 + d > vd){
                         z0 = vd - d;
                     }
-
                     tiles.add(new int[]{
                             z0, y0, x0
                     });
@@ -275,6 +236,40 @@ public class FloatPredictor {
         int[] origin = tiles.get(tile);
         System.out.print(".");
         int t = 0;
+
+        float[] factors = new float[c];
+        float[] means = new float[c];
+        //Batch Normalize
+        for (int i = 0; i < c; i++) {
+            float mn = 0;
+            float m2 = 0;
+            int count = 0;
+
+            for(int j = 0; j<d; j++) {
+                //processor order is xycz
+                int proc_offset = vw*vh * (i + vc*j);
+
+                for (int k = 0; k < h; k++) {
+                    int y = k + origin[1];
+                    int px_offset = proc_offset + vw*y;
+
+                    for (int m = 0; m < w; m++) {
+                        int x = m + origin[2];
+
+                        float f =  data.get(px_offset + x);
+                        mn += f;
+                        m2 += f*f;
+                        count ++;
+                    }
+                }
+            }
+
+            mn = mn/count;
+            float std = (float)Math.sqrt(m2/count - mn*mn);
+            means[i] = mn;
+            factors[i] = std > 1.0e-3 ? 1f/std : 1;
+        }
+
         for(int i = 0; i<c; i++){
             for(int j = 0; j<d; j++){
                 /**
@@ -290,12 +285,14 @@ public class FloatPredictor {
                 //ImageProcessor p = stack.getProcessor(channel_offset + c*j + frame_offset + 1);
                 int z = j + origin[0];
                 int proc_offset = vw*vh * ( vc * z + i);
+
                 for(int k = 0; k<h; k++){
 
                     for(int m = 0; m<w; m++){
                         int x = m + origin[2];
                         int y = k + origin[1];
-                        batchBuffer[t + batch_offset] = data.get(proc_offset + vw*y + x);
+                        float f = data.get(proc_offset + vw*y + x);
+                        batchBuffer[t + batch_offset] = (f - means[i])*factors[i];
                         t++;
                     }
 

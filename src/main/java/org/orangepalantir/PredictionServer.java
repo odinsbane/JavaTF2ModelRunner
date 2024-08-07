@@ -31,6 +31,7 @@ public class PredictionServer implements AutoCloseable{
     Session s;
     Signature sig;
     SessionFunction fun;
+    int port = 5050;
     public PredictionServer(String filename){
         bundle = SavedModelBundle.load(filename);
         s = bundle.session();
@@ -43,8 +44,8 @@ public class PredictionServer implements AutoCloseable{
         ExecutorService receiver = Executors.newFixedThreadPool(1);
         ExecutorService predicts = Executors.newFixedThreadPool(1);
         ExecutorService sender = Executors.newFixedThreadPool(1);
-
-        try (ServerSocket socket = new ServerSocket(5050);
+        System.out.println("starter local server on port: " + port);
+        try (ServerSocket socket = new ServerSocket(port);
              Socket client = socket.accept();
         ) {
 
