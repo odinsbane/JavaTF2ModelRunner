@@ -82,13 +82,13 @@ public class PredictionApp {
         ImagePlus plus = new ImagePlus(Paths.get(args[1]).toAbsolutePath().toString());
         PredictionApp app = new PredictionApp(args[0]);
         List<ImagePlus> predictions = app.predictImage(plus);
-        //new ImageJ();
-        //for(ImagePlus p: predictions){
-        //    p.show();
-        //}
-        int c = 0;
+        new ImageJ();
         for(ImagePlus p: predictions){
-            IJ.save(p, "c"+ ( c++ ) + ".tiff");
+            p.show();
         }
+        //int c = 0;
+        //for(ImagePlus p: predictions){
+        //    IJ.save(p, "c"+ ( c++ ) + ".tiff");
+        //}
     }
 }

@@ -145,7 +145,8 @@ public class FloatPredictor {
             if(origin[2] + pw < ow){
                 xhigh = 3*pw/4;
             }
-
+            double min = Double.MAX_VALUE;
+            double max = -min;
             for (int i = 0; i < oc; i++) {
                 int depth_offset = i + origin[0] * oc;
                 for (int j = dlow; j < dhigh; j++) {
@@ -157,11 +158,15 @@ public class FloatPredictor {
                             int x = m + origin[2];
                             int y = k + origin[1];
                             int t = m + k*pw + j * ( pw * ph) + i*pw*ph*pd;
+                            float v = data[t + batch_offset];
+                            if(v < min) min = v;
+                            if(v > max) max = v;
                             pixels.put(proc_offset + y*ow + x, data[t + batch_offset] );
                         }
                     }
                 }
             }
+            System.out.println("out: " + tile + ", " + min + ", " + max);
         }
     }
     /**
@@ -241,16 +246,18 @@ public class FloatPredictor {
         float[] means = new float[c];
         //Batch Normalize
         for (int i = 0; i < c; i++) {
-            float mn = 0;
-            float m2 = 0;
+            double mn = 0;
+            double m2 = 0;
             int count = 0;
 
             for(int j = 0; j<d; j++) {
                 //processor order is xycz
-                int proc_offset = vw*vh * (i + vc*j);
+                int z = j + origin[0];
+                int proc_offset = vw*vh * (i + vc*z);
 
                 for (int k = 0; k < h; k++) {
                     int y = k + origin[1];
+
                     int px_offset = proc_offset + vw*y;
 
                     for (int m = 0; m < w; m++) {
@@ -266,8 +273,9 @@ public class FloatPredictor {
 
             mn = mn/count;
             float std = (float)Math.sqrt(m2/count - mn*mn);
-            means[i] = mn;
+            means[i] = (float)mn;
             factors[i] = std > 1.0e-3 ? 1f/std : 1;
+            System.out.println("in, " + tile + ", " + mn + ", " + std);
         }
 
         for(int i = 0; i<c; i++){
