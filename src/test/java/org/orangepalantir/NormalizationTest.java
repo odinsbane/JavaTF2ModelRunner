@@ -1,2 +1,4 @@
-package org.orangepalantir;public class NormalizationTest {
+package org.orangepalantir;
+
+public class NormalizationTest {
 }

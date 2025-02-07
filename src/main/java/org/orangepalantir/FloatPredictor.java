@@ -166,7 +166,6 @@ public class FloatPredictor {
                     }
                 }
             }
-            System.out.println("out: " + tile + ", " + min + ", " + max);
         }
     }
     /**
@@ -239,7 +238,7 @@ public class FloatPredictor {
 
     public void bufferTile(int tile, int batch_offset){
         int[] origin = tiles.get(tile);
-        System.out.print(".");
+        System.out.print(String.format("\b\b\b%03d", tile));
         int t = 0;
 
         float[] factors = new float[c];
@@ -275,7 +274,6 @@ public class FloatPredictor {
             float std = (float)Math.sqrt(m2/count - mn*mn);
             means[i] = (float)mn;
             factors[i] = std > 1.0e-3 ? 1f/std : 1;
-            System.out.println("in, " + tile + ", " + mn + ", " + std);
         }
 
         for(int i = 0; i<c; i++){
@@ -323,6 +321,7 @@ public class FloatPredictor {
     List<OutputMapper> predict(SessionFunction fun){
         Map<String, OutputMapper> results = new HashMap<>();
         try(Tensor input = TFloat32.tensorOf(Shape.of(batch_size, c, d, h, w));){
+            System.out.println(".Y.");
             Map<String, Tensor> inputs = new HashMap<>();
             inputs.put(name, input);
             for(int i = 0; i<nBatches; i++){
