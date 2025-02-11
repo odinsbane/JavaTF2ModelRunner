@@ -182,6 +182,9 @@ public class FloatPredictor {
         vh = height;
         vw = width;
         vd = slices;
+        if( vd < d){
+            throw new RuntimeException("Note enough slices, " + slices + "to fill " + d);
+        }
         this.data = ByteBuffer.wrap(data).asFloatBuffer();
         createVolumeTiles();
     }
@@ -202,7 +205,6 @@ public class FloatPredictor {
                     x0 = strideX*k;
                     y0 = strideY*j;
                     z0 = strideZ*i;
-
                     if( x0 + w > vw){
                         x0 = vw - w;
                     }
@@ -248,8 +250,8 @@ public class FloatPredictor {
             double mn = 0;
             double m2 = 0;
             int count = 0;
-
             for(int j = 0; j<d; j++) {
+
                 //processor order is xycz
                 int z = j + origin[0];
                 int proc_offset = vw*vh * (i + vc*z);
@@ -258,10 +260,8 @@ public class FloatPredictor {
                     int y = k + origin[1];
 
                     int px_offset = proc_offset + vw*y;
-
                     for (int m = 0; m < w; m++) {
                         int x = m + origin[2];
-
                         float f =  data.get(px_offset + x);
                         mn += f;
                         m2 += f*f;
@@ -269,7 +269,6 @@ public class FloatPredictor {
                     }
                 }
             }
-
             mn = mn/count;
             float std = (float)Math.sqrt(m2/count - mn*mn);
             means[i] = (float)mn;
