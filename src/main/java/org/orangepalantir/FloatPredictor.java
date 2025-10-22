@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 public class FloatPredictor {
-    int batch_size = 4;
+    int batch_size = 16;
     int nBatches;
     int w;
     int h;
@@ -235,12 +235,12 @@ public class FloatPredictor {
         for(int i = 0; i<batch_size; i++){
             bufferTile(i + tile_index, i*bd);
         }
+        System.out.println("batch: " + n);
         return batchBuffer;
     }
 
     public void bufferTile(int tile, int batch_offset){
         int[] origin = tiles.get(tile);
-        System.out.print(String.format("\b\b\b%03d", tile));
         int t = 0;
 
         float[] factors = new float[c];
@@ -320,7 +320,6 @@ public class FloatPredictor {
     List<OutputMapper> predict(SessionFunction fun){
         Map<String, OutputMapper> results = new HashMap<>();
         try(Tensor input = TFloat32.tensorOf(Shape.of(batch_size, c, d, h, w));){
-            System.out.println(".Y.");
             Map<String, Tensor> inputs = new HashMap<>();
             inputs.put(name, input);
             for(int i = 0; i<nBatches; i++){

@@ -11,6 +11,8 @@ import org.tensorflow.SessionFunction;
 import org.tensorflow.Signature;
 import org.tensorflow.op.math.Imag;
 
+import org.tensorflow.DeviceSpec;
+
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.file.Paths;
@@ -78,17 +80,21 @@ public class PredictionApp {
     }
 
     public static void main(String[] args){
+        long start = System.currentTimeMillis();
+        DeviceSpec gpuSpec = DeviceSpec.newBuilder().deviceType(DeviceSpec.DeviceType.GPU).deviceIndex(0).build();
+        System.out.println(gpuSpec);
         //Loads image loads model and makes a prediction.
         ImagePlus plus = new ImagePlus(Paths.get(args[1]).toAbsolutePath().toString());
+        ImagePlus iso = App.getIsoTropicFrame(plus, 0);
         PredictionApp app = new PredictionApp(args[0]);
-        List<ImagePlus> predictions = app.predictImage(plus);
-        new ImageJ();
+        List<ImagePlus> predictions = app.predictImage(iso);
+        
+        int c = 0;
         for(ImagePlus p: predictions){
-            p.show();
+            IJ.save(p, "predicted-c"+ ( c++ ) + ".tiff");
         }
-        //int c = 0;
-        //for(ImagePlus p: predictions){
-        //    IJ.save(p, "c"+ ( c++ ) + ".tiff");
-        //}
+        long end = System.currentTimeMillis();
+        System.out.println( ( (end - start)/1000.0 ) + " seconds" );
+
     }
 }
